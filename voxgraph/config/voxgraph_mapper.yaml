@@ -1,6 +1,6 @@
 verbose: false
 debug: true
-auto_pause_rosbag: false
+auto_pause_rosbag: true
 
 submap_creation_interval: 10
 subscriber_queue_length: 10
