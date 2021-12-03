@@ -41,7 +41,9 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 
 
 
-## lidar_undistortion os1_undistortion.launch
+# lidar_undistortion
+
+## os1_undistortion.launch
 
 <a name=os1_undistortion></a>
 
@@ -56,13 +58,13 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 
 - ![lidar_undistorter-ln16](./pic_voxgraph/lidar_undistortion/lidar_undistorter-ln16.png)
 
-- 从topic `pointcloud`读取msg, 调用回调函数[`pointcloudCallback()`](#pointcloudCallback)
+- 从topic `pointcloud`读取msg, 调用回调函数[`pointcloudCallback()`](#lidar_undistortion-pointcloudCallback)
   - 读取的是原始点云
 - 正确点云的pub topic是`pointcloud_corrected`
 
 #### pointcloudCallback()
 
-<a name=pointcloudCallback></a>
+<a name=lidar_undistortion-pointcloudCallback></a>
 
 - ![lidar_undistorter-ln38](./pic_voxgraph/lidar_undistortion/lidar_undistorter-ln38.png)
 - 这次点云扫描的起始时间和结束时间
@@ -92,7 +94,9 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 
 
 
-## voxgraph voxgraph_mapper.launch
+# voxgraph
+
+## voxgraph_mapper.launch
 
 <a name=voxgraph_mapper></a>
 
@@ -106,96 +110,9 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 - 从ros拿参数`getParametersFromRos()`
   - 略
   - 如果`update_mesh_every_n_sec > 0`, 定时回调[`publishActiveSubmapMeshCallback()` ](#publishActiveSubmapMeshCallback)
-- sub topic `subscribeToTopics()`
-
-#### `pointcloudCallback()`
+- sub topic `subscribeToTopics()`, 回调函数[`pointcloudCallback()`](#voxgraph_mapper-pointcloudCallback)
 
 - 
-
-  - ![voxgraph_mapper-ln205](./pic_voxgraph/voxgraph/voxgraph_mapper-ln205.png)
-
-  - `current_timestamp`: 点云msg的时间戳
-
-  - 根据`current_timestamp`**更新`map_tracker_`**
-
-    - **\*TODO\*** 补上详细解释
-    - 更新`T_O_B_`, baselink到odom的transform
-    - 更新`T_S_B_`, baselink到submap的transform
-    - 更新`T_B_C_`, baselink到pointcloud的transform
-
-  - 根据`current_timestamp`判断是否需要**生成新的submap**
-
-    - `shouldCreateNewSubmap()`判断时间是否超出时间间隔(20)
-
-    - *注意, 生成新的子地图前需要确认优化完成*
-
-      - *生成新图会重置约束条件, 如果有未完成的优化会导致程序崩溃*
-
-    - ![voxgraph_mapper-ln230](./pic_voxgraph/voxgraph/voxgraph_mapper-ln230.png)
-
-    - 把完成的子地图加入pose graph, 生成新的子地图`switchToNewSubmap()`  
-
-      - ![voxgraph_mapper-ln460](./pic_voxgraph/voxgraph/voxgraph_mapper-ln460.png)
-
-      - 对当前活跃子地图做收尾工作 `submap_collection_ptr_->getActiveSubmapPtr()->`[`finishSubmap()`](#finishSubmap)
-
-      - 更新配准约束`updateRegistrationConstraints()`
-
-        -  ![pose_graph_interface-ln151](./pic_voxgraph/voxgraph/pose_graph_interface-ln151.png)
-        - 重置配准约束, 清空`constraints_collection_`中的list`registration_constraints_`
-        - 更新子地图的重叠部分`updateOverlappingSubmapList()`
-          - ![pose_graph_interface-ln109](./pic_voxgraph/voxgraph/pose_graph_interface-ln109.png)
-          - 遍历所有配对 
-            - i=0 : `submap_ids.size()`-1
-            - j=i+1 : `submap_ids.size()`-1
-          - 如果(i, j)有重叠[overlapsWith()](#overlapsWith), 加入`overlapping_submap_list_`
-        - ![pose_graph_interface](./pic_voxgraph/voxgraph/pose_graph_interface.png)
-        - 遍历`overlapping_submap_list_`中的元素
-          - 生成约束, 包含元素中的两个子地图的id和ptr
-          - 把约束加入`pose_graph_`中
-
-      - ![voxgraph_mapper-ln474](./pic_voxgraph/voxgraph/voxgraph_mapper-ln474.png)
-
-      - 生成新的子地图`createNewSubmap()`
-
-        -  ![voxgraph_submap_collection-ln30](./pic_voxgraph/voxgraph/voxgraph_submap_collection-ln30.png)
-        - 输入参数
-          - 当前位姿`map_tracker_.get_T_M_B()`, 当前时间戳`current_timestamp`
-        - 通过把机体位姿和重力方向对齐`gravityAlignPose()`, 得到给新的子地图的初始位姿`T_mission__new_submap`
-          - 把位姿log成$[x, y, z, r, p, y]$
-          - 把roll $r$和yaw $y$设置为0
-          - exp回旋转矩阵, 得到和重力方向对齐的位姿
-        - 生成子地图`cblox::SubmapCollection<VoxgraphSubmap>::createNewSubmap(T_mission__new_submap)`
-          - **\*TODO\*** 搞清这段代码在哪 `$(find cblox)/cblox/include/cblox/core/submap_collection_inl.h`?
-        - 把时间戳和新地图id加入`submap_timeline_`
-
-      - 新的子地图id加入`pose_graph_`
-
-      - 转换去新的子地图`switchToNewSubmap()`
-
-      - ![voxgraph_mapper-ln486](./pic_voxgraph/voxgraph/voxgraph_mapper-ln486.png)
-
-      - 添加上一张子地图S1和新子地图S2之间的里程计约束
-
-      - 计算S1和S2之间的变换矩阵
-
-      - 添加里程计约束`addOdometryMeasurement()`
-
-        - 
-
-        
-
-    
-
-    
-
-    - 发布当前子地图mesh`publishActiveSubmapMeshCallback()`<a name=publishActiveSubmapMeshCallback></a>
-      -  
-    - 回调优化位姿图`optimizePoseGraph()`
-      -  
-    - 发布地图`publishMaps()`
-      -  
-    - 
 
 #### `loopClosureCallback()`
 
@@ -215,6 +132,113 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 
 
 
+#### `pointcloudCallback()`
+
+- <a name=voxgraph_mapper-pointcloudCallback></a>
+- ![voxgraph_mapper-ln205](./pic_voxgraph/voxgraph/voxgraph_mapper-ln205.png)
+
+- `current_timestamp`: 点云msg的时间戳
+- 根据`current_timestamp`**更新`map_tracker_`**
+
+  - **\*TODO\*** 补上详细解释
+  - 更新`T_O_B_`, baselink到odom的transform
+  - 更新`T_S_B_`, baselink到submap的transform
+  - 更新`T_B_C_`, baselink到pointcloud的transform
+- 根据`current_timestamp`判断是否需要**生成新的submap**
+
+  - `shouldCreateNewSubmap()`判断时间是否超出时间间隔(20)
+  - *注意, 生成新的子地图前需要确认优化完成*
+
+    - *生成新图会重置约束条件, 如果有未完成的优化会导致程序崩溃*
+- ![voxgraph_mapper-ln230](./pic_voxgraph/voxgraph/voxgraph_mapper-ln230.png)
+
+##### `switchToNewSubmap()`   
+
+- 把完成的子地图加入pose graph, 生成新的子地图
+  - ![voxgraph_mapper-ln460](./pic_voxgraph/voxgraph/voxgraph_mapper-ln460.png)
+  - 对当前活跃子地图做收尾工作 `submap_collection_ptr_->getActiveSubmapPtr()->`[`finishSubmap()`](#finishSubmap)
+  - 更新配准约束`updateRegistrationConstraints()`
+
+    -  ![pose_graph_interface-ln151](./pic_voxgraph/voxgraph/pose_graph_interface-ln151.png)
+    -  重置配准约束, 清空`constraints_collection_`中的list`registration_constraints_`
+    -  更新子地图的重叠部分`updateOverlappingSubmapList()`
+       - ![pose_graph_interface-ln109](./pic_voxgraph/voxgraph/pose_graph_interface-ln109.png)
+       - 遍历所有配对 
+         - i=0 : `submap_ids.size()`-1
+         - j=i+1 : `submap_ids.size()`-1
+       - 如果(i, j)有重叠[overlapsWith()](#overlapsWith), 加入`overlapping_submap_list_`
+    -  ![pose_graph_interface](./pic_voxgraph/voxgraph/pose_graph_interface.png)
+    -  遍历`overlapping_submap_list_`中的元素
+       - 生成约束, 包含元素中的两个子地图的id和ptr
+       - 把约束加入`pose_graph_`中
+  - ![voxgraph_mapper-ln474](./pic_voxgraph/voxgraph/voxgraph_mapper-ln474.png)
+  - 生成新的子地图`createNewSubmap()`
+
+    -  ![voxgraph_submap_collection-ln30](./pic_voxgraph/voxgraph/voxgraph_submap_collection-ln30.png)
+    -  输入参数
+       - 当前位姿`map_tracker_.get_T_M_B()`, 当前时间戳`current_timestamp`
+    -  通过把机体位姿和重力方向对齐`gravityAlignPose()`, 得到给新的子地图的初始位姿`T_mission__new_submap`
+       - 把位姿log成$[x, y, z, r, p, y]$
+       - 把roll $r$和yaw $y$设置为0
+       - exp回旋转矩阵, 得到和重力方向对齐的位姿
+    -  生成子地图`cblox::SubmapCollection<VoxgraphSubmap>::createNewSubmap(T_mission__new_submap)`
+       - **\*TODO\*** 搞清这段代码在哪 `$(find cblox)/cblox/include/cblox/core/submap_collection_inl.h`?
+    -  把时间戳和新地图id加入`submap_timeline_`
+  - 新的子地图id加入`pose_graph_`
+  - 转换去新的子地图`switchToNewSubmap()`
+  - ![voxgraph_mapper-ln486](./pic_voxgraph/voxgraph/voxgraph_mapper-ln486.png)
+  - 添加上一张子地图S1和新子地图S2之间的里程计约束
+  - 计算S1和S2之间的变换矩阵
+  - 添加里程计约束`addOdometryMeasurement()`
+
+    - ![pose_graph_interface-ln41](./pic_voxgraph/voxgraph/pose_graph_interface-ln41.png)
+    - 约束配置使用odometry的模板
+    - 传递参数: 第一个地图id, 第二个地图id, 两个地图间的变换矩阵
+    - 作为**相对**位姿约束加入`pose_graph_`
+  - 添加高度约束`addHeightMeasurement()`
+    - ![pose_graph_interface-ln94](./pic_voxgraph/voxgraph/pose_graph_interface-ln94.png)
+    - 约束配置使用height的模板
+    - 传递参数: 地图id, 高度
+    -  如果`pose graph_`中没有参考坐标系, 那么向其中添加reference frame
+    - 作为**绝对**位姿约束加入`pose_graph_`
+
+##### `publishActiveSubmapMeshCallback()` 
+
+- 发布当前子地图mesh<a name=publishActiveSubmapMeshCallback></a>
+  -  ![voxgraph_mapper-ln348](./pic_voxgraph/voxgraph/voxgraph_mapper-ln348.png)
+  -  参数: 
+     -  整个子地图的ptr(?), 当前子地图id
+     -  地图颜色
+     -  子地图frame ??
+     -  ros pub节点 ??
+  -  获取子地图ptr
+  -  ![submap_visuals-ln54](./pic_voxgraph/voxgraph/submap_visuals-ln54.png)
+  -  创建`mesh_layer_ptr`
+  -  创建`reference_mesh_integrator`
+  -  生成mesh
+     -  参数: mesh所有blocks
+     -  ![mesh_integrator-ln138](./pic_voxgraph/voxblox/mesh_integrator-ln138.png)
+     -  获取block的id `all_tsdf_blocks` if `only_mesh_updated_blocks`: `getAllUpdatedBlocks()`, else `getAllAllocatedBlocks()`
+        -  把`block_map_`中的元素`std::pair<const BlockIndex, typename BlockType::Ptr>`的第一项(`BlockIndex`)添加到`blocks`中
+        -  区别在于如果 只mesh更新的blocks`getAllUpdatedBlocks()`, 会检查元素的第二项block是否更新过, 如果更新过才添加. 
+        -  `getAllAllocatedBlocks()`会全部添加
+     -  为所有block分配mesh memory
+     -  ![mesh_integrator-ln150](./pic_voxgraph/voxblox/mesh_integrator-ln150.png)
+     -  多线程处理 生成mesh block的函数 [`generateMeshBlocksFunction()`](#generateMeshBlocksFunction)
+        -  
+  -  生成color mesh
+     -  
+
+##### `optimizePoseGraph()`
+
+- 回调优化位姿图
+  -  
+
+##### `publishMaps()`
+
+- 发布地图
+  -  
+
 
 
 ### voxgraph_submap.cpp
@@ -232,7 +256,7 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
   - 调用`.updateFromTsdfLayerBatch()`
     - **\*TODO\***
 
-#### overlapsWith(const VoxgraphSubmap& other_submap)
+#### `overlapsWith(const VoxgraphSubmap& other_submap)`
 
 <a name=overlapsWith></a>
 
@@ -250,3 +274,40 @@ issue区有人提出类似问题https://github.com/ethz-asl/voxgraph/issues/58, 
 - 遍历子地图中的所有block, 转换到另一个子地图`other_submap`, 判断是否在`other_submap`上, 有则return true
 - 所有block都不在`other_submap`上, return false
 
+
+
+# voxblox
+
+### mesh_integrator.h
+
+`$(find voxblox)/voxblox/include/voxblox/mesh/mesh_integrator.h`
+
+#### `generateMeshBlocksFunction()`
+
+-  <a name=generateMeshBlocksFunction></a>
+-  遍历`all_tsdf_blocks`中的所有(属于这个线程的)`block_idx`
+-  更新该block_idx对应的`block`的mesh **`updateMeshForBlock()`**
+   -  **`extractBlockMesh(block, mesh)`**
+      -  ![mesh_integrator-ln194](./pic_voxgraph/voxblox/mesh_integrator-ln194.png)
+      -  遍历`block`中的每一个voxel, 计算对应的坐标, 
+      -  生成对应的mesh **`extractMeshInsideBlock()`**
+         -  遍历block(?)的每一个顶点voxel(?)
+            -  获取该处的SDF
+            -  如果该处没有被观测过, 停止遍历, break
+            -  把顶点坐标记录进`corner_coords`中
+         -  如果所有顶点都被观测到
+            -  对cube进行mesh **`MarchingCubes::meshCube()`**
+               -  *有关marching cube的内容请自行搜索补充相关知识*
+               -  ![marching_cubes-ln77](./pic_voxgraph/voxblox/marching_cubes-ln77.png)
+               -  根据顶点的sdf正负, 转换成`kTriangleTable`对应的序号`index`
+               -  插值计算边
+                  -  对于每条边, 如果两个端点sdf值一正一负(zero-crossing)
+                     -  差值计算边的sdf
+               -  ![marching_cubes-ln88](./pic_voxgraph/voxblox/marching_cubes-ln88.png)
+               -  获取`index`对应的三角面片序号
+               -  遍历每组三角面片序号(三个一组, 所以while循环最后自增3)
+                  -  添加 顶点
+                  -  添加 index
+                  -  添加 法平面向量
+         -  处理 x_max的两条边
+            -  
